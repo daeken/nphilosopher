@@ -1,0 +1,12 @@
+using System;
+
+using NPhilosopher;
+
+namespace NPhilosopher.NILC {
+	module NILC {
+		Main() : void {
+			def assembly = CILReflector.ReflectAssembly("Test/HelloWorld.exe");
+			//def native = CILCompileIA32.CompileAssembly(assembly);
+		}
+	}
+}

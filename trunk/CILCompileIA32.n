@@ -1,0 +1,37 @@
+using System;
+
+namespace NPhilosopher {
+	public module CILCompileIA32 {
+		public CompileAssembly(assembly : NAssembly) : void {
+			| Assembly(_, types) =>
+				CompileList(types);
+			
+			| Type(_, members) =>
+				CompileList(members);
+			
+			| Method(_, _, _, il) =>
+				CompileIL(il);
+			
+			| _ => ();
+		}
+		
+		CompileList(obj : list [NAssembly]) : void {
+			| [] => ();
+			| head :: tail =>
+				CompileAssembly(head);
+				CompileList(tail);
+		}
+		
+		CompileIL(il : NIL) : void {
+			
+			| Block(_, insts) =>
+				foreach(inst :> NIL.Inst in insts)
+					_ = CILToStack.ConvertInst(inst);
+			
+			| Inst(_, _, _, opcd, mnem, _) =>
+				Console.WriteLine("{0:X} {1}", opcd, mnem);
+			
+			| _ => ();
+		}
+	}
+}

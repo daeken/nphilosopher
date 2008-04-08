@@ -1,0 +1,564 @@
+using System;
+using System.Collections;
+using System.Reflection;
+
+namespace NPhilosopher {
+	public variant NAssembly {
+		| Assembly {
+			AssemblyName : string;
+			Types : list [NAssembly];
+		}
+		
+		| Type {
+			TypeName : string;
+			Members : list [NAssembly];
+		}
+		
+		| Method {
+			MethodName : string;
+			Arguments : list [NAssembly];
+			ReturnType : System.Type;
+			IL : NIL;
+		}
+		
+		| Argument {
+			ArgName : string;
+			ArgType : System.Type;
+		}
+		
+		| Other
+	}
+	
+	public variant NIL {
+		| Block {
+			Pos : int;
+			Insts : ArrayList;
+		}
+		
+		| Inst {
+			Pos : int;
+			Size : int;
+			Prefix : NIL;
+			Opcode : uint;
+			Mnem : string;
+			Argument : NIL;
+		}
+		
+		| TokenArg
+		| IntArg {
+			Size : int;
+		}
+		| UIntArg {
+			USize : int;
+		}
+		
+		| Int {
+			Value : int;
+		}
+		| UInt {
+			UValue : uint;
+		}
+		| Object {
+			OValue : object;
+		}
+	}
+	
+	public module CILReflector {
+		public Prefixes : list [uint * string * NIL] = [
+			(0xFE16U, "constrained.", NIL.TokenArg()),
+			(0xFE19U, "no.", NIL.UIntArg(8)),
+			(0xFE1EU, "readonly.", null),
+			(0xFE14U, "tail.", null),
+			(0xFE12U, "unaligned.", NIL.UIntArg(8)),
+			(0xFE13U, "volatile.", null)
+		];
+		
+		public Opcodes : list [uint * string * NIL] = [
+			(0x0000U, "nop", null),
+			(0x0001U, "break", null),
+			(0x0002U, "ldarg.0", null),
+			(0x0003U, "ldarg.1", null),
+			(0x0004U, "ldarg.2", null),
+			(0x0005U, "ldarg.3", null),
+			(0x0006U, "ldarg.0", null),
+			(0x0007U, "ldarg.1", null),
+			(0x0008U, "ldarg.2", null),
+			(0x0009U, "ldarg.3", null),
+			(0x000AU, "stloc.0", null),
+			(0x000BU, "stloc.1", null),
+			(0x000CU, "stloc.2", null),
+			(0x000DU, "stloc.3", null),
+			(0x000EU, "ldarg.s", NIL.IntArg(8)),
+			(0x000FU, "ldarga.s", NIL.IntArg(8)),
+			(0x0010U, "starg.s", NIL.IntArg(8)),
+			(0x0011U, "ldloc.s", NIL.IntArg(8)),
+			(0x0012U, "ldloca.s", NIL.IntArg(8)),
+			(0x0013U, "stloc.s", NIL.IntArg(8)),
+			(0x0014U, "ldnull", null),
+			(0x0015U, "ldc.i4.m1", null),
+			(0x0016U, "ldc.i4.0", null),
+			(0x0017U, "ldc.i4.1", null),
+			(0x0018U, "ldc.i4.2", null),
+			(0x0019U, "ldc.i4.3", null),
+			(0x001AU, "ldc.i4.4", null),
+			(0x001BU, "ldc.i4.5", null),
+			(0x001CU, "ldc.i4.6", null),
+			(0x001DU, "ldc.i4.7", null),
+			(0x001EU, "ldc.i4.8", null),
+			(0x001FU, "ldc.i4.s", NIL.IntArg(8)),
+			(0x0020U, "ldc.i4", NIL.IntArg(32)),
+			(0x0021U, "ldc.i8", NIL.IntArg(64)),
+			//(0x0022U, "ldc.r4", NIL.FloatArg(32)),
+			//(0x0023U, "ldc.r8", NIL.FloatArg(64)),
+			(0x0025U, "dup", null),
+			(0x0026U, "pop", null),
+			(0x0027U, "jmp", NIL.TokenArg()),
+			(0x0028U, "call", NIL.TokenArg()),
+			(0x0029U, "calli", NIL.TokenArg()),
+			(0x002AU, "ret", null),
+			(0x002BU, "br.s", NIL.IntArg(8)),
+			(0x002CU, "brfalse.s", NIL.IntArg(8)),
+			(0x002DU, "brtrue.s", NIL.IntArg(8)),
+			(0x002EU, "beq.s", NIL.IntArg(8)),
+			(0x002FU, "bge.s", NIL.IntArg(8)),
+			(0x0030U, "bgt.s", NIL.IntArg(8)),
+			(0x0031U, "ble.s", NIL.IntArg(8)),
+			(0x0032U, "blt.s", NIL.IntArg(8)),
+			(0x0033U, "bne.s", NIL.IntArg(8)),
+			(0x0034U, "bge.un.s", NIL.IntArg(8)),
+			(0x0035U, "bgt.un.s", NIL.IntArg(8)),
+			(0x0036U, "ble.un.s", NIL.IntArg(8)),
+			(0x0037U, "ble.un.s", NIL.IntArg(8)),
+			(0x0038U, "br", NIL.IntArg(32)),
+			(0x0039U, "brfalse", NIL.IntArg(32)),
+			(0x003AU, "brtrue", NIL.IntArg(32)),
+			(0x003BU, "beq", NIL.IntArg(32)),
+			(0x003CU, "bge", NIL.IntArg(32)),
+			(0x003DU, "bgt", NIL.IntArg(32)),
+			(0x003EU, "ble", NIL.IntArg(32)),
+			(0x003FU, "blt", NIL.IntArg(32)),
+			(0x0040U, "bne", NIL.IntArg(32)),
+			(0x0041U, "bge.un", NIL.IntArg(32)),
+			(0x0042U, "bgt.un", NIL.IntArg(32)),
+			(0x0043U, "ble.un", NIL.IntArg(32)),
+			(0x0044U, "blt.un", NIL.IntArg(32)),
+			(0x0046U, "ldind.i1", null),
+			(0x0047U, "ldind.u1", null),
+			(0x0048U, "ldind.i2", null),
+			(0x0049U, "ldind.u2", null),
+			(0x004AU, "ldind.i4", null),
+			(0x004BU, "ldind.u4", null),
+			(0x004CU, "ldind.i8", null),
+			(0x004DU, "ldind.i", null),
+			(0x004EU, "ldind.r4", null),
+			(0x004FU, "ldind.r8", null),
+			(0x0050U, "ldind.ref", null),
+			(0x0051U, "stind.ref", null),
+			(0x0052U, "stind.i1", null),
+			(0x0053U, "stind.i2", null),
+			(0x0054U, "stind.i4", null),
+			(0x0055U, "stind.i8", null),
+			(0x0056U, "stind.r4", null),
+			(0x0057U, "stind.r8", null),
+			(0x0058U, "add", null),
+			(0x0059U, "sub", null),
+			(0x005AU, "mul", null),
+			(0x005BU, "div", null),
+			(0x005CU, "div.un", null),
+			(0x005DU, "rem", null),
+			(0x005EU, "rem.un", null),
+			(0x005FU, "and", null),
+			(0x0060U, "or", null),
+			(0x0061U, "xor", null),
+			(0x0062U, "shl", null),
+			(0x0063U, "shr", null),
+			(0x0064U, "shr.un", null),
+			(0x0065U, "neg", null),
+			(0x0066U, "nop", null),
+			(0x0067U, "conv.i1", null),
+			(0x0068U, "conv.i2", null),
+			(0x0069U, "conv.i4", null),
+			(0x006AU, "conv.i8", null),
+			(0x006BU, "conv.r4", null),
+			(0x006CU, "conv.r8", null),
+			(0x006DU, "conv.u4", null),
+			(0x006EU, "conv.u8", null),
+			(0x006FU, "callvirt", NIL.TokenArg()),
+			(0x0070U, "cpobj", NIL.TokenArg()),
+			(0x0071U, "ldobj", NIL.TokenArg()),
+			(0x0072U, "ldstr", NIL.TokenArg()),
+			(0x0073U, "newobj", NIL.TokenArg()),
+			(0x0074U, "castclass", NIL.TokenArg()),
+			(0x0075U, "isinst", NIL.TokenArg()),
+			(0x0076U, "conv.r.un", null),
+			(0x0079U, "unbox", NIL.TokenArg()),
+			(0x007AU, "throw", null),
+			(0x007BU, "ldfld", NIL.TokenArg()),
+			(0x007CU, "ldflda", NIL.TokenArg()),
+			(0x007CU, "stfld", NIL.TokenArg()),
+			(0x007EU, "ldsfld", NIL.TokenArg()),
+			(0x007FU, "ldsflda", NIL.TokenArg()),
+			(0x0080U, "stsfld", NIL.TokenArg()),
+			(0x0081U, "stobj", NIL.TokenArg()),
+			(0x0082U, "conv.ovf.i1.un", null),
+			(0x0083U, "conv.ovf.i2.un", null),
+			(0x0084U, "conv.ovf.i4.un", null),
+			(0x0085U, "conv.ovf.i8.un", null),
+			(0x0086U, "conv.ovf.u1.un", null),
+			(0x0087U, "conv.ovf.u2.un", null),
+			(0x0088U, "conv.ovf.u4.un", null),
+			(0x0089U, "conv.ovf.u8.un", null),
+			(0x008AU, "conv.ovf.i.un", null),
+			(0x008BU, "conv.ovf.u.un", null),
+			(0x008CU, "box", NIL.TokenArg()),
+			(0x008DU, "newarr", NIL.TokenArg()),
+			(0x008EU, "ldlen", null),
+			(0x008FU, "ldelema", NIL.TokenArg()),
+			(0x0090U, "ldelem.i1", null),
+			(0x0091U, "ldelem.u1", null),
+			(0x0092U, "ldelem.i2", null),
+			(0x0093U, "ldelem.u2", null),
+			(0x0094U, "ldelem.i4", null),
+			(0x0095U, "ldelem.u4", null),
+			(0x0096U, "ldelem.i8", null),
+			(0x0097U, "ldelem.i", null),
+			(0x0098U, "ldelem.r4", null),
+			(0x0099U, "ldelem.r8", null),
+			(0x009AU, "ldelem.ref", null),
+			(0x009BU, "stelem.i1", null),
+			(0x009CU, "stelem.i1", null),
+			(0x009DU, "stelem.i2", null),
+			(0x009EU, "stelem.i4", null),
+			(0x009FU, "stelem.i8", null),
+			(0x00A0U, "stelem.r4", null),
+			(0x00A1U, "stelem.r8", null),
+			(0x00A2U, "stelem.ref", null),
+			(0x00A3U, "ldelem", NIL.TokenArg()),
+			(0x00A3U, "stelem", NIL.TokenArg()),
+			(0x00A5U, "unbox.any", NIL.TokenArg()),
+			(0x00B3U, "conv.ovf.i1", null),
+			(0x00B4U, "conv.ovf.u1", null),
+			(0x00B5U, "conv.ovf.i2", null),
+			(0x00B6U, "conv.ovf.u2", null),
+			(0x00B7U, "conv.ovf.i4", null),
+			(0x00B8U, "conv.ovf.u4", null),
+			(0x00B9U, "conv.ovf.i8", null),
+			(0x00BAU, "conv.ovf.u8", null),
+			(0x00C2U, "refanyval", NIL.TokenArg()),
+			(0x00C3U, "ckfinite", null),
+			(0x00C6U, "mkrefany", NIL.TokenArg()),
+			(0x00D0U, "ldtoken", NIL.TokenArg()),
+			(0x00D1U, "conv.u2", null),
+			(0x00D2U, "conv.u1", null),
+			(0x00D3U, "conv.i", null),
+			(0x00D4U, "conv.ovf.i", null),
+			(0x00D5U, "conv.ovf.u", null),
+			(0x00D6U, "add.ovf", null),
+			(0x00D7U, "add.ovf.un", null),
+			(0x00D8U, "mul.ovf", null),
+			(0x00D9U, "mul.ovf.un", null),
+			(0x00DAU, "sub.ovf", null),
+			(0x00DBU, "sub.ovf.un", null),
+			(0x00DCU, "endfinally", null),
+			(0x00DDU, "leave", NIL.IntArg(32)),
+			(0x00DEU, "leave.s", NIL.IntArg(8)),
+			(0x00DFU, "stind.i", null),
+			(0x00E0U, "conv.u", null),
+			(0xFE00U, "arglist", null),
+			(0xFE01U, "ceq", null),
+			(0xFE02U, "cgt", null),
+			(0xFE03U, "cgt.un", null),
+			(0xFE04U, "clt", null),
+			(0xFE05U, "clt.un", null),
+			(0xFE06U, "ldftn", NIL.TokenArg()),
+			(0xFE07U, "ldvirtftn", NIL.TokenArg()),
+			(0xFE09U, "ldarg", NIL.IntArg(16)),
+			(0xFE0AU, "ldarga", NIL.IntArg(16)),
+			(0xFE0BU, "starg", NIL.IntArg(16)),
+			(0xFE0CU, "ldloc", NIL.IntArg(16)),
+			(0xFE0DU, "ldloca", NIL.IntArg(16)),
+			(0xFE0EU, "stloc", NIL.IntArg(16)),
+			(0xFE0FU, "localloc", null),
+			(0xFE11U, "endfilter", null),
+			(0xFE15U, "initobj", NIL.TokenArg()),
+			(0xFE18U, "initblk", null), // Once you go block, you never go back
+			(0xFE1AU, "rethrow", null),
+			(0xFE1CU, "sizeof", NIL.TokenArg()),
+			(0xFE1DU, "refanytype", null),
+		];
+		
+		public ReflectAssembly(file : string) : NAssembly {
+			mutable types : list [NAssembly] = [];
+			def assembly = Assembly.ReflectionOnlyLoadFrom(file);
+			
+			foreach(t in assembly.GetTypes())
+				types = NAssembly.Type(t.FullName, ReflectMembers(t)) :: types;
+			
+			NAssembly.Assembly(assembly.FullName, types);
+		}
+		
+		public ReflectMembers(t : Type) : list[NAssembly] {
+			mutable members : list [NAssembly] = [];
+			def flags = (
+				BindingFlags.Instance |
+				BindingFlags.Static |
+				BindingFlags.Public |
+				BindingFlags.NonPublic
+			);
+			
+			foreach(member in t.GetMembers(flags)) {
+				def mem = match(member.MemberType) {
+					| MemberTypes.Method =>
+						def method = member :> MethodInfo;
+						NAssembly.Method(
+								MethodName=member.Name, 
+								Arguments=ReflectMethodArguments(method),
+								ReturnType=method.ReturnType,
+								IL={
+									def body = method.GetMethodBody();
+									if(body == null)
+										null;
+									else
+										ReflectMethodIL(body, method.Module);
+								}
+						);
+					| _ => NAssembly.Other();
+				};
+				members = mem :: members;
+			}
+			
+			members;
+		}
+		
+		public ReflectMethodArguments(m : MethodInfo) : list [NAssembly] {
+			mutable args : list [NAssembly] = [];
+			
+			foreach(param in m.GetParameters())
+				args = NAssembly.Argument(param.Name, param.ParameterType) :: args;
+			
+			args;
+		}
+		
+		public ReflectMethodIL(body : MethodBody, mod : Module) : NIL.Block {
+			def insts = Hashtable();
+			def blocks = Hashtable();
+			def il = body.GetILAsByteArray();
+			mutable blockList : list [int] = [];
+			mutable next : int;
+			mutable start : int;
+			
+			def U32() {
+				(il[next] :> uint | 
+				(il[next + 1] :> uint <<  8) | 
+				(il[next + 2] :> uint << 16) | 
+				(il[next + 3] :> uint << 24));
+			}
+			
+			def ParseArgument(arg) : NIL {
+				| NIL.TokenArg =>
+					def token = U32() :> int;
+					next += 4;
+					
+					match(token >> 24) {
+						| 0x06 => NIL.Object(mod.ResolveMethod(token));
+						| 0x0A => NIL.Object(mod.ResolveMember(token));
+						| 0x70 => NIL.Object(mod.ResolveString(token));
+						| x => 
+							Console.WriteLine("Table: {0:X}", x);
+							NIL.Object(null);
+					}
+				
+				| NIL.IntArg(size) =>
+					def temp = match(ParseArgument(NIL.UIntArg(size))) {
+						| NIL.UInt(val) => val :> int;
+						| _ => 0;
+					};
+					def signmask = 1U << (size - 1);
+					
+					NIL.Int({
+						if((temp :> uint & signmask) != 0)
+							match(size) {
+								| 8 => -(~temp & 0xFF) - 1;
+								| 16 => -(~temp & 0xFFFF) - 1;
+								| 24 => -(~temp) - 1;
+								| _ => temp;
+							}
+						else
+							temp;
+					});
+				
+				| NIL.UIntArg(size) =>
+					def temp = NIL.UInt(
+						match(size) {
+							| 8 => il[next] :> uint;
+							| 16 => (il[next] :> uint | (il[next + 1] :> uint << 8));
+							| 32 => U32();
+							| _ => 0U;
+						}
+					);
+					next += size >> 3;
+					temp;
+				
+				| _ => null;
+			}
+			
+			def ParseOpcd(opcd, prefix, opcodes) {
+				match(opcodes) {
+					| [] => null;
+					| (instopcd, mnem, arg) :: rest =>
+						if(opcd == instopcd) {
+							next++;
+							unless(opcd & 0xFF00U == 0)
+								next++;
+							def parg = ParseArgument(arg);
+							NIL.Inst(
+								Pos=start,
+								Size=next-start,
+								Prefix=prefix,
+								Opcode=opcd,
+								Mnem=mnem,
+								Argument=parg
+							);
+						}
+						else
+							ParseOpcd(opcd, prefix, rest);
+				}
+			}
+			
+			def Parse() {
+				def prefix = ParseOpcd(
+					match(il[next] :> uint) {
+						| 0xFEU => (0xFE00U | (il[next+1] :> uint));
+						| x => x;
+					}, 
+					null, 
+					Prefixes
+				);
+				def opcd = match(il[next] :> uint) {
+					| 0xFEU => (0xFE00U | (il[next+1] :> uint));
+					| x => x;
+				};
+				def inst = ParseOpcd(
+					opcd, 
+					prefix, 
+					Opcodes
+				);
+				
+				when(inst == null)
+					throw Exception(String.Format("Unknown opcode {0:X}", opcd));
+				
+				inst;
+			}
+			
+			def ProcessInst(pos) : void {
+				unless(insts.ContainsKey(pos)) {
+					next = pos;
+					def inst = Parse();
+					insts.Add(pos, inst);
+					match(inst) {
+						| NIL.Inst(_, _, _, opcd, _, arg) =>
+							match(opcd) {
+								| 0x002AU => (); // ret
+								
+								// Conditional branches
+								| 0x002CU | 0x002DU | 0x002EU | 0x002FU
+								| 0x0030U | 0x0031U | 0x0032U | 0x0033U
+								| 0x0034U | 0x0035U | 0x0036U | 0x0037U
+								| 0x0039U | 0x003AU | 0x003BU | 0x003CU
+								| 0x003DU | 0x003EU | 0x003FU | 0x0030U
+								| 0x0031U | 0x0032U | 0x0033U | 0x0034U
+								// Unconditional branches
+								| 0x002BU | 0x003BU =>
+									def target = match(arg) {
+										| Int(val) =>
+											next + val;
+										| x => throw Exception(String.Format("Unknown branch arg {0}", x));
+									};
+									blockList = target :: blockList;
+									ProcessInst(target);
+									unless(target == next)
+										ProcessInst(next);
+								
+								| _ =>
+									ProcessInst(next);
+							}
+					}
+				}
+			}
+			
+			def BuildBlocks(remaining) {
+				| [] => blocks[0] :> NIL.Block;
+				| pos :: rest =>
+					def blockInsts = ArrayList();
+					next = pos;
+					
+					mutable break : bool = false;
+					while(!break && insts.ContainsKey(next)) {
+						def inst = insts[next] :> NIL.Inst;
+						_ = blockInsts.Add(inst);
+						
+						match(inst) {
+							| Inst(_, size, _, _, _, _) =>
+								next = size;
+								when(blocks.ContainsKey(next))
+									break = true;
+						}
+					}
+					
+					_ = blocks.Add(pos, NIL.Block(pos, blockInsts));
+					
+					BuildBlocks(rest);
+			}
+			
+			blockList = 0 :: blockList;
+			ProcessInst(0);
+			BuildBlocks(blockList);
+		}
+		
+		private Dump(obj : NAssembly) : void {
+			| NAssembly.Assembly(name, types) =>
+				Console.WriteLine("Assembly: {0}", name);
+				DumpList(types);
+			
+			| NAssembly.Type(name, members) =>
+				Console.WriteLine("\tType: {0}", name);
+				DumpList(members);
+			
+			| NAssembly.Method(name, args, returnType, il) =>
+				Console.WriteLine("\t\tMethod: {0}", name);
+				DumpList(args);
+				Console.WriteLine("\t\t\tReturns: {0}", returnType);
+				
+				match(il) {
+					| NIL.Block(_, insts) =>
+						foreach(inst :> NIL.Inst in insts)
+							match(inst) {
+								| NIL.Inst(_, _, _, _, mnem, arg) =>
+									Console.WriteLine(
+										"\t\t\t\t{0} {1}", 
+										mnem, 
+										match(arg) {
+											| Int(val) => val : object;
+											| UInt(val) => val : object;
+											| Object(obj) => obj;
+											| x => x;
+										}
+									);
+							}
+					| _ => ();
+				}
+			
+			| NAssembly.Argument(name, argType) =>
+				Console.WriteLine("\t\t\tArgument: {0} : {1}", name, argType);
+			
+			| _ => ();
+		}
+		
+		private DumpList(obj : list [NAssembly]) : void {
+			| [] => ();
+			| head :: tail =>
+				Dump(head);
+				DumpList(tail);
+		}
+	}
+}
