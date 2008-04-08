@@ -1,0 +1,98 @@
+using System;
+
+namespace NPhilosopher {
+	public variant NComparison {
+		| EQ
+		| NE
+		| GT
+		| LT
+		| GTE
+		| LTE
+	}
+	
+	public variant NIT {
+		| Add
+		| Sub
+		| Mul
+		| Div
+		| Mod
+		| Neg
+		
+		| And
+		| Or
+		| Xor
+		| Shl
+		| Shr {
+			SignExtend : bool;
+		}
+		| Not
+		
+		| Push {
+			PushValue : object;
+		}
+		| PushArg {
+			Arg : int;
+		}
+		| Pop
+		| Dup
+		
+		| Call {
+			CallTarget : object;
+		}
+		| CallVirt {
+			VirtTarget : object;
+		}
+		| Ret
+		
+		| CondBranch {
+			Taken : object;
+			NotTaken : object;
+			Comparison : NComparison;
+			Signed : bool;
+		}
+	}
+	
+	public module CILToStack {
+		public ConvertInst(inst : NIL.Inst) : NIT {
+			| Inst(_, _, _, opcd, _, arg) =>
+				match(opcd) {
+					| 0x0000U => null;
+					
+					| 0x0002U => NIT.PushArg(0);
+					| 0x0003U => NIT.PushArg(1);
+					| 0x0004U => NIT.PushArg(2);
+					| 0x0005U => NIT.PushArg(3);
+					
+					| 0x0028U => NIT.Call(CA(arg));
+					| 0x002AU => NIT.Ret();
+					
+					| 0x0058U => NIT.Add();
+					| 0x0059U => NIT.Sub();
+					| 0x005AU => NIT.Mul();
+					| 0x005BU => NIT.Div();
+					| 0x0065U => NIT.Neg();
+					
+					| 0x005FU => NIT.And();
+					| 0x0060U => NIT.Or();
+					| 0x0061U => NIT.Xor();
+					| 0x0062U => NIT.Shl();
+					| 0x0063U => NIT.Shr(SignExtend=false);
+					| 0x0064U => NIT.Shr(SignExtend=true);
+					| 0x0066U => NIT.Not();
+					
+					| 0x006FU => NIT.CallVirt(CA(arg));
+					
+					| 0x0072U => NIT.Push(CA(arg));
+					
+					| _ => throw Exception(String.Format("Unknown opcode {0:X}", opcd));
+				}
+		}
+		
+		CA(arg : NIL) : object {
+			| Int(val) => val : object;
+			| UInt(val) => val : object;
+			| Object(obj) => obj : object;
+			| x => x;
+		}
+	}
+}
