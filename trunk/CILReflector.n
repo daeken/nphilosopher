@@ -18,7 +18,7 @@ namespace NPhilosopher {
 			MethodName : string;
 			Arguments : list [NAssembly];
 			ReturnType : System.Type;
-			IL : NIL;
+			Blocks : Hashtable;
 		}
 		
 		| Argument {
@@ -44,19 +44,27 @@ namespace NPhilosopher {
 			Argument : NIL;
 		}
 		
-		| TokenArg
 		| IntArg {
 			Size : int;
 		}
 		| UIntArg {
 			USize : int;
 		}
+		| FloatArg
+		| DoubleArg
+		| TokenArg
 		
 		| Int {
-			Value : int;
+			Value : long;
 		}
 		| UInt {
-			UValue : uint;
+			UValue : ulong;
+		}
+		| Float {
+			FValue : float;
+		}
+		| Double {
+			DValue : double;
 		}
 		| Object {
 			OValue : object;
@@ -108,8 +116,8 @@ namespace NPhilosopher {
 			(0x001FU, "ldc.i4.s", NIL.IntArg(8)),
 			(0x0020U, "ldc.i4", NIL.IntArg(32)),
 			(0x0021U, "ldc.i8", NIL.IntArg(64)),
-			//(0x0022U, "ldc.r4", NIL.FloatArg(32)),
-			//(0x0023U, "ldc.r8", NIL.FloatArg(64)),
+			(0x0022U, "ldc.r4", NIL.FloatArg()),
+			(0x0023U, "ldc.r8", NIL.DoubleArg()),
 			(0x0025U, "dup", null),
 			(0x0026U, "pop", null),
 			(0x0027U, "jmp", NIL.TokenArg()),
@@ -314,7 +322,7 @@ namespace NPhilosopher {
 								MethodName=member.Name, 
 								Arguments=ReflectMethodArguments(method),
 								ReturnType=method.ReturnType,
-								IL={
+								Blocks={
 									def body = method.GetMethodBody();
 									if(body == null)
 										null;
@@ -339,7 +347,7 @@ namespace NPhilosopher {
 			args;
 		}
 		
-		public ReflectMethodIL(body : MethodBody, mod : Module) : NIL.Block {
+		public ReflectMethodIL(body : MethodBody, mod : Module) : Hashtable {
 			def insts = Hashtable();
 			def blocks = Hashtable();
 			def il = body.GetILAsByteArray();
@@ -347,16 +355,43 @@ namespace NPhilosopher {
 			mutable next : int;
 			mutable start : int;
 			
-			def U32() {
-				(il[next] :> uint | 
-				(il[next + 1] :> uint <<  8) | 
-				(il[next + 2] :> uint << 16) | 
-				(il[next + 3] :> uint << 24));
-			}
-			
 			def ParseArgument(arg) : NIL {
+				| NIL.IntArg(size) =>
+					def temp = NIL.Int(
+						match(size) {
+							| 8 => (il[next] :> sbyte) : object
+							| 16 => BitConverter.ToInt16(il, next) : object
+							| 32 => BitConverter.ToInt32(il, next) : object
+							| 64 => BitConverter.ToInt64(il, next) : object
+							| _ => 0
+						} :> long
+					);
+					next += size >> 3;
+					temp;
+				
+				| NIL.UIntArg(size) =>
+					def temp = NIL.UInt(
+						match(size) {
+							| 8 => il[next] : object
+							| 16 => BitConverter.ToUInt16(il, next) : object
+							| 32 => BitConverter.ToUInt32(il, next) : object
+							| 64 => BitConverter.ToUInt64(il, next) : object
+							| _ => 0
+						} :> ulong
+					);
+					next += size >> 3;
+					temp;
+				
+				| NIL.FloatArg =>
+					next += 4;
+					NIL.Float(BitConverter.ToSingle(il, next-4));
+				
+				| NIL.DoubleArg =>
+					next += 8;
+					NIL.Double(BitConverter.ToDouble(il, next-8));
+				
 				| NIL.TokenArg =>
-					def token = U32() :> int;
+					def token = BitConverter.ToInt32(il, next);
 					next += 4;
 					
 					match(token >> 24) {
@@ -367,37 +402,6 @@ namespace NPhilosopher {
 							Console.WriteLine("Table: {0:X}", x);
 							NIL.Object(null);
 					}
-				
-				| NIL.IntArg(size) =>
-					def temp = match(ParseArgument(NIL.UIntArg(size))) {
-						| NIL.UInt(val) => val :> int;
-						| _ => 0;
-					};
-					def signmask = 1U << (size - 1);
-					
-					NIL.Int({
-						if((temp :> uint & signmask) != 0)
-							match(size) {
-								| 8 => -(~temp & 0xFF) - 1;
-								| 16 => -(~temp & 0xFFFF) - 1;
-								| 24 => -(~temp) - 1;
-								| _ => temp;
-							}
-						else
-							temp;
-					});
-				
-				| NIL.UIntArg(size) =>
-					def temp = NIL.UInt(
-						match(size) {
-							| 8 => il[next] :> uint;
-							| 16 => (il[next] :> uint | (il[next + 1] :> uint << 8));
-							| 32 => U32();
-							| _ => 0U;
-						}
-					);
-					next += size >> 3;
-					temp;
 				
 				| _ => null;
 			}
@@ -470,7 +474,7 @@ namespace NPhilosopher {
 								| 0x002BU | 0x003BU =>
 									def target = match(arg) {
 										| Int(val) =>
-											next + val;
+											next + val :> int;
 										| x => throw Exception(String.Format("Unknown branch arg {0}", x));
 									};
 									blockList = target :: blockList;
@@ -486,7 +490,7 @@ namespace NPhilosopher {
 			}
 			
 			def BuildBlocks(remaining) {
-				| [] => blocks[0] :> NIL.Block;
+				| [] => blocks;
 				| pos :: rest =>
 					def blockInsts = ArrayList();
 					next = pos;
@@ -523,29 +527,10 @@ namespace NPhilosopher {
 				Console.WriteLine("\tType: {0}", name);
 				DumpList(members);
 			
-			| NAssembly.Method(name, args, returnType, il) =>
+			| NAssembly.Method(name, args, returnType, _) =>
 				Console.WriteLine("\t\tMethod: {0}", name);
 				DumpList(args);
 				Console.WriteLine("\t\t\tReturns: {0}", returnType);
-				
-				match(il) {
-					| NIL.Block(_, insts) =>
-						foreach(inst :> NIL.Inst in insts)
-							match(inst) {
-								| NIL.Inst(_, _, _, _, mnem, arg) =>
-									Console.WriteLine(
-										"\t\t\t\t{0} {1}", 
-										mnem, 
-										match(arg) {
-											| Int(val) => val : object;
-											| UInt(val) => val : object;
-											| Object(obj) => obj;
-											| x => x;
-										}
-									);
-							}
-					| _ => ();
-				}
 			
 			| NAssembly.Argument(name, argType) =>
 				Console.WriteLine("\t\t\tArgument: {0} : {1}", name, argType);

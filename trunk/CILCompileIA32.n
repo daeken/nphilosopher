@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 
 namespace NPhilosopher {
 	public module CILCompileIA32 {
@@ -9,8 +10,9 @@ namespace NPhilosopher {
 			| Type(_, members) =>
 				CompileList(members);
 			
-			| Method(_, _, _, il) =>
-				CompileIL(il);
+			| Method(name, _, _, blocks) when blocks != null =>
+				System.Console.WriteLine(name);
+				CompileBlock(blocks, 0);
 			
 			| _ => ();
 		}
@@ -22,16 +24,20 @@ namespace NPhilosopher {
 				CompileList(tail);
 		}
 		
-		CompileIL(il : NIL) : void {
-			
-			| Block(_, insts) =>
-				foreach(inst :> NIL.Inst in insts)
-					_ = CILToStack.ConvertInst(inst);
-			
-			| Inst(_, _, _, opcd, mnem, _) =>
-				Console.WriteLine("{0:X} {1}", opcd, mnem);
-			
-			| _ => ();
+		CompileBlock(blocks : Hashtable, start : int) : void {
+			match(blocks[start] :> NIL.Block) {
+				| Block(_, insts) =>
+					foreach(inst :> NIL.Inst in insts)
+						CompileInst(inst);
+			}
+		}
+		
+		CompileInst(inst : NIL.Inst) : void {
+			match(CILToStack.ConvertInst(inst)) {
+				| null => ()
+				
+				| x => Console.WriteLine("{0}", x)
+			}
 		}
 	}
 }

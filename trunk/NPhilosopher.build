@@ -3,32 +3,35 @@
 	<description>An extensible compiler in Nemerle</description>
 	<property name="debug" value="true" overwrite="false" />
 	<target name="clean" description="Clean build directory">
-		<delete file="NPhilosopher.dll" failonerror="false" />
-		<delete file="NPhilosopher.pdb" failonerror="false" />
-		<delete file="nilc.exe" failonerror="false" />
-		<delete file="nilc.pdb" failonerror="false" />
-		<delete file="Test/HelloWorld.exe" failonerror="false" />
+		<delete failonerror="false">
+			<fileset>
+				<include name="Obj\*.dll" />
+				<include name="Obj\*.exe" />
+				<include name="Obj\*.pdb" />
+			</fileset>
+		</delete>
 	</target>
 	
 	<target name="build" description="Build NPhilosopher">
-		<ncc target="library" output="NPhilosopher.dll" debug="${debug}">
+		<mkdir dir="Obj" />
+		<ncc target="library" output="Obj\NPhilosopher.dll" debug="${debug}">
 			<sources>
 				<include name="CILReflector.n" />
 				<include name="CILToStack.n" />
 				<include name="CILCompileIA32.n" />
 			</sources>
 		</ncc>
-		<ncc target="exe" output="nilc" debug="${debug}">
+		<ncc target="exe" output="Obj\nilc.exe" debug="${debug}">
 			<sources>
 				<include name="NILC.n" />
 			</sources>
 			<references>
-				<include name="NPhilosopher.dll" />
+				<include name="Obj\NPhilosopher.dll" />
 			</references>
 		</ncc>
-		<csc target="exe" output="Test/HelloWorld.exe">
+		<csc target="exe" output="Obj\HelloWorld.exe">
 			<sources>
-				<include name="Test/HelloWorld.cs" />
+				<include name="Test\HelloWorld.cs" />
 			</sources>
 		</csc>
 	</target>

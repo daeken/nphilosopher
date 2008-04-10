@@ -4,9 +4,9 @@ using NPhilosopher;
 
 namespace NPhilosopher.NILC {
 	module NILC {
-		Main() : void {
-			def assembly = CILReflector.ReflectAssembly("Test/HelloWorld.exe");
-			//def native = CILCompileIA32.CompileAssembly(assembly);
+		Main(args : array [string]) : void {
+			def assembly = CILReflector.ReflectAssembly(args[0]);
+			CILCompileIA32.CompileAssembly(assembly);
 		}
 	}
 }
