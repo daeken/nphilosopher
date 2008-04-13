@@ -10,9 +10,19 @@ namespace NPhilosopher {
 			| Type(_, members) =>
 				CompileList(members);
 			
-			| Method(name, _, _, blocks) when blocks != null =>
-				System.Console.WriteLine(name);
+			| Method(name, locals, _, _, blocks) when blocks != null =>
+				System.Console.WriteLine("method_{0}", name);
+				System.Console.WriteLine("\t.begin:");
+				System.Console.WriteLine("\t\tpush ebp");
+				System.Console.WriteLine("\t\tmov ebp, esp");
+				unless(locals == 0)
+					System.Console.WriteLine("\t\tadd esp, {0}", locals * 4);
 				CompileBlock(blocks, 0);
+				System.Console.WriteLine("\t.end:");
+				unless(locals == 0)
+					System.Console.WriteLine("\t\tsub esp, {0}", locals * 4);
+				System.Console.WriteLine("\t\tpop ebp");
+				System.Console.WriteLine("\t\tret");
 			
 			| _ => ();
 		}
@@ -26,18 +36,55 @@ namespace NPhilosopher {
 		
 		CompileBlock(blocks : Hashtable, start : int) : void {
 			match(blocks[start] :> NIL.Block) {
-				| Block(_, insts) =>
+				| Block(pos, insts) =>
+					System.Console.WriteLine("\t.block{0}:", pos);
 					foreach(inst :> NIL.Inst in insts)
-						CompileInst(inst);
+						CompileInst(CILToNIT.ConvertInst(inst));
 			}
 		}
 		
-		CompileInst(inst : NIL.Inst) : void {
-			match(CILToStack.ConvertInst(inst)) {
-				| null => ()
-				
-				| x => Console.WriteLine("{0}", x)
-			}
+		CompileMath(oper : string) : void {
+			System.Console.WriteLine("\t\tpop ebx");
+			System.Console.WriteLine("\t\tpop eax");
+			System.Console.WriteLine("\t\t{0} eax, ebx", oper);
+			System.Console.WriteLine("\t\tpush eax");
+		}
+		
+		CompileInst(inst : NIT) : void {
+			| null => ()
+			
+			| Checked(_, inst) =>
+				CompileInst(inst);
+			
+			| Add => CompileMath("add")
+			| Sub => CompileMath("sub")
+			| Mul => CompileMath("imul")
+			| Div => CompileMath("idiv")
+			
+			| Push(value) =>
+				match(value) {
+					| value is int =>
+						System.Console.WriteLine("\t\tpush {0}", value)
+					| x =>
+						System.Console.WriteLine("Push unknown {0} {1}", x.GetType(), x)
+				}
+			
+			| LoadArg(arg) =>
+				System.Console.WriteLine("\t\tmov eax, [ebp-{0}]", arg * 4 + 4);
+				System.Console.WriteLine("\t\tpush eax");
+			
+			| LoadLocal(local) =>
+				System.Console.WriteLine("\t\tmov eax, [ebp+{0}]", local * 4);
+				System.Console.WriteLine("\t\tpush eax");
+			
+			| StoreLocal(local) =>
+				System.Console.WriteLine("\t\tpop eax");
+				System.Console.WriteLine("\t\tmov [ebp+{0}], eax", local * 4);
+			
+			| Ret() =>
+				System.Console.WriteLine("\t\tjmp .end")
+			
+			| x => Console.WriteLine("{0}", x)
 		}
 	}
 }

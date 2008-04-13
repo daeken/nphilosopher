@@ -17,7 +17,7 @@
 		<ncc target="library" output="Obj\NPhilosopher.dll" debug="${debug}">
 			<sources>
 				<include name="CILReflector.n" />
-				<include name="CILToStack.n" />
+				<include name="CILToNIT.n" />
 				<include name="CILCompileIA32.n" />
 			</sources>
 		</ncc>
@@ -29,10 +29,10 @@
 				<include name="Obj\NPhilosopher.dll" />
 			</references>
 		</ncc>
-		<csc target="exe" output="Obj\HelloWorld.exe">
+		<ncc target="exe" output="Obj\Test.exe">
 			<sources>
-				<include name="Test\HelloWorld.cs" />
+				<include name="Test\Test.n" />
 			</sources>
-		</csc>
+		</ncc>
 	</target>
 </project>
