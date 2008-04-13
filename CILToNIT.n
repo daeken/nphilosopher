@@ -1,0 +1,142 @@
+using System;
+
+namespace NPhilosopher {
+	public variant NComparison {
+		| EQ
+		| NE
+		| GT
+		| LT
+		| GTE
+		| LTE
+	}
+	
+	public variant NIT {
+		| Add
+		| Sub
+		| Mul
+		| Div
+		| Mod
+		| Neg
+		
+		| And
+		| Or
+		| Xor
+		| Shl
+		| Shr {
+			SignExtend : bool;
+		}
+		| Not
+		
+		| Push {
+			PushValue : object;
+		}
+		| Pop
+		| Dup
+		
+		| Call {
+			CallTarget : object;
+		}
+		| CallVirt {
+			VirtTarget : object;
+		}
+		| Ret
+		
+		| CondBranch {
+			Taken : object;
+			NotTaken : object;
+			Comparison : NComparison;
+			Signed : bool;
+		}
+		
+		| Checked {
+			Signed : bool;
+			Inst : NIT;
+		}
+		
+		| StoreLocal {
+			LocalDest : long;
+		}
+		| LoadLocal {
+			LocalSrc : long;
+		}
+		| LoadArg {
+			Arg : int;
+		}
+	}
+	
+	public module CILToNIT {
+		public ConvertInst(inst : NIL.Inst) : NIT {
+			| Inst(_, _, _, opcd, _, arg) =>
+				match(opcd) {
+					| 0x0000U => null
+					
+					| 0x0002U => NIT.LoadArg(0)
+					| 0x0003U => NIT.LoadArg(1)
+					| 0x0004U => NIT.LoadArg(2)
+					| 0x0005U => NIT.LoadArg(3)
+					
+					| 0x0006U => NIT.LoadLocal(0)
+					| 0x0007U => NIT.LoadLocal(1)
+					| 0x0008U => NIT.LoadLocal(2)
+					| 0x0009U => NIT.LoadLocal(3)
+					
+					| 0x000AU => NIT.StoreLocal(0)
+					| 0x000BU => NIT.StoreLocal(1)
+					| 0x000CU => NIT.StoreLocal(2)
+					| 0x000DU => NIT.StoreLocal(3)
+					
+					| 0x0028U => NIT.Call(CA(arg))
+					| 0x002AU => NIT.Ret()
+					
+					| 0x0058U => NIT.Add()
+					| 0x0059U => NIT.Sub()
+					| 0x005AU => NIT.Mul()
+					| 0x005BU => NIT.Div()
+					| 0x0065U => NIT.Neg()
+					
+					| 0x00D6U => NIT.Checked(Signed=true, Inst=NIT.Add())
+					| 0x00D7U => NIT.Checked(Signed=false, Inst=NIT.Add())
+					| 0x00D8U => NIT.Checked(Signed=true, Inst=NIT.Mul())
+					| 0x00D9U => NIT.Checked(Signed=false, Inst=NIT.Mul())
+					| 0x00DAU => NIT.Checked(Signed=true, Inst=NIT.Sub())
+					| 0x00DBU => NIT.Checked(Signed=false, Inst=NIT.Sub())
+					
+					| 0x005FU => NIT.And()
+					| 0x0060U => NIT.Or()
+					| 0x0061U => NIT.Xor()
+					| 0x0062U => NIT.Shl()
+					| 0x0063U => NIT.Shr(SignExtend=false)
+					| 0x0064U => NIT.Shr(SignExtend=true)
+					| 0x0066U => NIT.Not()
+					
+					| 0x006FU => NIT.CallVirt(CA(arg))
+					
+					// ldc.*
+					| 0x0015U => NIT.Push(-1 : Int32)
+					| 0x0016U => NIT.Push(0 : Int32)
+					| 0x0017U => NIT.Push(1 : Int32)
+					| 0x0018U => NIT.Push(2 : Int32)
+					| 0x0019U => NIT.Push(3 : Int32)
+					| 0x001AU => NIT.Push(4 : Int32)
+					| 0x001BU => NIT.Push(5 : Int32)
+					| 0x001CU => NIT.Push(6 : Int32)
+					| 0x001DU => NIT.Push(7 : Int32)
+					| 0x001EU => NIT.Push(8 : Int32)
+					| 0x001FU => NIT.Push((CA(arg) :> long) :> int)
+					| 0x0020U => NIT.Push((CA(arg) :> long) :> Int32)
+					| 0x0021U => NIT.Push((CA(arg) :> long) :> Int32)
+					
+					| 0x0072U => NIT.Push(CA(arg))
+					
+					| _ => throw Exception(String.Format("Unknown opcode {0:X}", opcd));
+				}
+		}
+		
+		CA(arg : NIL) : object {
+			| Int(val) => val : object;
+			| UInt(val) => val : object;
+			| Object(obj) => obj : object;
+			| x => x;
+		}
+	}
+}

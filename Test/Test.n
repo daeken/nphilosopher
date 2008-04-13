@@ -1,0 +1,16 @@
+module Test {
+	public Foo(blah : int) : int {
+		def test = blah * 8;
+		test + 15;
+	}
+	
+	public Bar(baz : int, hax : int) : int {
+		def baz = baz * hax;
+		def hax = baz / hax;
+		baz - hax
+	}
+	
+	public Main() : int {
+		Bar(Foo(17), 6) + Foo(Bar(50, 15))
+	}
+}
