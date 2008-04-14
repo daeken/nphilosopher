@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using Nemerle.Collections;
 using System.Reflection;
 
 namespace NPhilosopher {
@@ -19,7 +20,7 @@ namespace NPhilosopher {
 			LocalCount : int;
 			Arguments : list [NAssembly];
 			ReturnType : System.Type;
-			Blocks : Hashtable;
+			Blocks : Hashtable [long, NIL.Block];
 		}
 		
 		| Argument {
@@ -312,7 +313,8 @@ namespace NPhilosopher {
 				BindingFlags.Instance |
 				BindingFlags.Static |
 				BindingFlags.Public |
-				BindingFlags.NonPublic
+				BindingFlags.NonPublic | 
+				BindingFlags.DeclaredOnly
 			);
 			
 			foreach(member in t.GetMembers(flags)) {
@@ -348,9 +350,9 @@ namespace NPhilosopher {
 			args;
 		}
 		
-		public ReflectMethodIL(body : MethodBody, mod : Module) : Hashtable {
+		public ReflectMethodIL(body : MethodBody, mod : Module) : Hashtable [long, NIL.Block] {
 			def insts = Hashtable();
-			def blocks = Hashtable();
+			def blocks = Hashtable.[long, NIL.Block]();
 			def il = body.GetILAsByteArray();
 			mutable blockList : list [int] = [];
 			mutable next : int;
@@ -360,7 +362,12 @@ namespace NPhilosopher {
 				| NIL.IntArg(size) =>
 					def temp = NIL.Int(
 						match(size) {
-							| 8 => (il[next] :> sbyte) :> long
+							| 8 => 
+								def temp = il[next] :> long;
+								if((temp & 0x80) == 0x80)
+									temp - 256
+								else
+									temp
 							| 16 => BitConverter.ToInt16(il, next) :> long
 							| 32 => BitConverter.ToInt32(il, next) :> long
 							| 64 => BitConverter.ToInt64(il, next)
@@ -458,6 +465,7 @@ namespace NPhilosopher {
 			def ProcessInst(pos) : void {
 				unless(insts.ContainsKey(pos)) {
 					next = pos;
+					start = pos;
 					def inst = Parse();
 					insts.Add(pos, inst);
 					match(inst) {
@@ -503,7 +511,7 @@ namespace NPhilosopher {
 						
 						match(inst) {
 							| Inst(_, size, _, _, _, _) =>
-								next = size;
+								next += size;
 								when(blocks.ContainsKey(next))
 									break = true;
 						}

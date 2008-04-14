@@ -1,90 +1,137 @@
 using System;
-using System.Collections;
+using Nemerle.Collections;
+using System.Reflection;
 
 namespace NPhilosopher {
 	public module CILCompileIA32 {
-		public CompileAssembly(assembly : NAssembly) : void {
+		public Compile(assembly : NAssembly) : void {
+			System.Console.Write(CompileAssembly(assembly));
+		}
+		
+		public CompileAssembly(assembly : NAssembly) : string {
 			| Assembly(_, types) =>
-				CompileList(types);
+				"[BITS 16]\n" + 
+				"[ORG 0x60000]\n" + 
+				"\tcall method_Main\n" + 
+				CompileList(types)
 			
 			| Type(_, members) =>
-				CompileList(members);
+				CompileList(members)
 			
 			| Method(name, locals, _, _, blocks) when blocks != null =>
-				System.Console.WriteLine("method_{0}", name);
-				System.Console.WriteLine("\t.begin:");
-				System.Console.WriteLine("\t\tpush ebp");
-				System.Console.WriteLine("\t\tmov ebp, esp");
-				unless(locals == 0)
-					System.Console.WriteLine("\t\tadd esp, {0}", locals * 4);
-				CompileBlock(blocks, 0);
-				System.Console.WriteLine("\t.end:");
-				unless(locals == 0)
-					System.Console.WriteLine("\t\tsub esp, {0}", locals * 4);
-				System.Console.WriteLine("\t\tpop ebp");
-				System.Console.WriteLine("\t\tret");
+				mutable asm = String.Format("method_{0}:\n", name) + 
+				"\t.begin:\n" + 
+				"\t\tpush ebp\n" + 
+				"\t\tmov ebp, esp\n";
+				asm += {
+					if(locals == 0)
+						""
+					else
+						String.Format("\t\tadd esp, {0}\n", locals * 4)
+				};
+				asm += "\t\tjmp .block_0\n"; 
+				foreach((key, _) in blocks.KeyValuePairs)
+					asm += CompileBlock(blocks, key);
+				asm + 
+				"\t.end:\n" + 
+				"\t\tpop eax\n" + 
+				"\t\tmov esp, ebp\n" + 
+				"\t\tpop ebp\n" + 
+				"\t\tret\n"
 			
-			| _ => ();
+			| _ => "";
 		}
 		
-		CompileList(obj : list [NAssembly]) : void {
-			| [] => ();
+		CompileList(obj : list [NAssembly]) : string {
+			| [] => "";
 			| head :: tail =>
-				CompileAssembly(head);
-				CompileList(tail);
+				CompileAssembly(head) + 
+				CompileList(tail)
 		}
 		
-		CompileBlock(blocks : Hashtable, start : int) : void {
-			match(blocks[start] :> NIL.Block) {
+		CompileBlock(blocks : Hashtable [long, NIL.Block], start : long) : string {
+			match(blocks[start]) {
 				| Block(pos, insts) =>
-					System.Console.WriteLine("\t.block{0}:", pos);
+					mutable asm = String.Format("\t.block_{0}:\n", pos);
 					foreach(inst :> NIL.Inst in insts)
-						CompileInst(CILToNIT.ConvertInst(inst));
+						asm += CompileInst(inst, CILToNIT.ConvertInst(inst));
+					asm;
 			}
 		}
 		
-		CompileMath(oper : string) : void {
-			System.Console.WriteLine("\t\tpop ebx");
-			System.Console.WriteLine("\t\tpop eax");
-			System.Console.WriteLine("\t\t{0} eax, ebx", oper);
-			System.Console.WriteLine("\t\tpush eax");
+		CompileMath(oper : string) : string {
+			"\t\tpop ebx\n" + 
+			"\t\tpop eax\n" + 
+			String.Format("\t\t{0} eax, ebx\n", oper) + 
+			"\t\tpush eax\n";
 		}
 		
-		CompileInst(inst : NIT) : void {
-			| null => ()
-			
-			| Checked(_, inst) =>
-				CompileInst(inst);
-			
-			| Add => CompileMath("add")
-			| Sub => CompileMath("sub")
-			| Mul => CompileMath("imul")
-			| Div => CompileMath("idiv")
-			
-			| Push(value) =>
-				match(value) {
-					| value is int =>
-						System.Console.WriteLine("\t\tpush {0}", value)
-					| x =>
-						System.Console.WriteLine("Push unknown {0} {1}", x.GetType(), x)
-				}
-			
-			| LoadArg(arg) =>
-				System.Console.WriteLine("\t\tmov eax, [ebp-{0}]", arg * 4 + 4);
-				System.Console.WriteLine("\t\tpush eax");
-			
-			| LoadLocal(local) =>
-				System.Console.WriteLine("\t\tmov eax, [ebp+{0}]", local * 4);
-				System.Console.WriteLine("\t\tpush eax");
-			
-			| StoreLocal(local) =>
-				System.Console.WriteLine("\t\tpop eax");
-				System.Console.WriteLine("\t\tmov [ebp+{0}], eax", local * 4);
-			
-			| Ret() =>
-				System.Console.WriteLine("\t\tjmp .end")
-			
-			| x => Console.WriteLine("{0}", x)
+		CompileInst(nilInst : NIL.Inst, inst : NIT) : string {
+			match(inst) {
+				| null => ""
+				
+				| Checked(_, inst) =>
+					CompileInst(nilInst, inst);
+				
+				| Add => CompileMath("add")
+				| Sub => CompileMath("sub")
+				| Mul => CompileMath("imul")
+				| Div => CompileMath("idiv")
+				
+				| Call(target is MethodInfo) =>
+					String.Format("\t\tcall method_{0}\n", target.Name) + 
+					"\t\tpush eax\n"
+				
+				| Push(value) =>
+					match(value) {
+						| value is int =>
+							String.Format("\t\tpush {0}\n", value)
+						| x =>
+							throw Exception(String.Format("Push unknown {0} {1}", x.GetType(), x))
+					}
+				
+				| LoadArg(arg) =>
+					String.Format("\t\tmov eax, [ebp-{0}]\n", arg * 4 + 4) + 
+					"\t\tpush eax\n"
+				
+				| LoadLocal(local) =>
+					String.Format("\t\tmov eax, [ebp+{0}]\n", local * 4) + 
+					"\t\tpush eax\n"
+				
+				| StoreLocal(local) =>
+					"\t\tpop eax\n" + 
+					String.Format("\t\tmov [ebp+{0}], eax\n", local * 4)
+				
+				| StoreIndirect(t) =>
+					"\t\tpop ebx\n" + 
+					"\t\tpop eax\n" + 
+					match(t) {
+						| _ is byte =>
+							"\t\tmov byte ptr [ebx], eax\n"
+						| x =>
+							throw Exception(String.Format("StoreIndirect {0}", x))
+					}
+				
+				| CondBranch(taken, _, comp, _) =>
+					if(comp == null) {
+						String.Format(
+							"\t\tjmp .block_{0}\n",
+							match(nilInst) {
+								| Inst(pos, _, _, _, _, _) =>
+									pos
+							} + taken
+						)
+					} else
+						throw Exception("Conditional branches not supported")
+				
+				| Ret() =>
+					"\t\tjmp .end\n"
+				
+				| Convert(_) =>
+					""
+				
+				| x => throw Exception(String.Format("{0}", x))
+			}
 		}
 	}
 }
