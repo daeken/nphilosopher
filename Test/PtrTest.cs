@@ -12,6 +12,12 @@ class PtrTest {
 		*ptr = (byte) 'r'; ptr++; *ptr = 0x0F; ptr++;
 		*ptr = (byte) 'l'; ptr++; *ptr = 0x0F; ptr++;
 		*ptr = (byte) 'd'; ptr++; *ptr = 0x0F; ptr++;
+		
+		int j = 0;
+		for(int i = 0; i < 10; ++i) {
+			j++;
+		}
+		
 		while(true) {}
 	}
 }
