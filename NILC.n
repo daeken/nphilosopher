@@ -6,7 +6,7 @@ namespace NPhilosopher.NILC {
 	module NILC {
 		Main(args : array [string]) : void {
 			def assembly = CILReflector.ReflectAssembly(args[0]);
-			CILCompileIA32.CompileAssembly(assembly);
+			CILCompileIA32.Compile(assembly);
 		}
 	}
 }

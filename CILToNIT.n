@@ -42,8 +42,8 @@ namespace NPhilosopher {
 		| Ret
 		
 		| CondBranch {
-			Taken : object;
-			NotTaken : object;
+			Taken : long;
+			NotTaken : long;
 			Comparison : NComparison;
 			Signed : bool;
 		}
@@ -61,6 +61,13 @@ namespace NPhilosopher {
 		}
 		| LoadArg {
 			Arg : int;
+		}
+		| StoreIndirect {
+			Type : object;
+		}
+		
+		| Convert {
+			TValue : object;
 		}
 	}
 	
@@ -84,6 +91,8 @@ namespace NPhilosopher {
 					| 0x000BU => NIT.StoreLocal(1)
 					| 0x000CU => NIT.StoreLocal(2)
 					| 0x000DU => NIT.StoreLocal(3)
+					
+					| 0x0052U => NIT.StoreIndirect(0 :> byte)
 					
 					| 0x0028U => NIT.Call(CA(arg))
 					| 0x002AU => NIT.Ret()
@@ -127,6 +136,11 @@ namespace NPhilosopher {
 					| 0x0021U => NIT.Push((CA(arg) :> long) :> Int32)
 					
 					| 0x0072U => NIT.Push(CA(arg))
+					
+					| 0x00D3U => NIT.Convert(0 : int)
+					| 0x00E0U => NIT.Convert(0 :> uint)
+					
+					| 0x002BU => NIT.CondBranch(CA(arg) :> long, 0, null, false)
 					
 					| _ => throw Exception(String.Format("Unknown opcode {0:X}", opcd));
 				}

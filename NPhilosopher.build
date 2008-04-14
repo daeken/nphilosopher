@@ -34,5 +34,10 @@
 				<include name="Test\Test.n" />
 			</sources>
 		</ncc>
+		<csc target="exe" output="Obj\PtrTest.exe" unsafe="true">
+			<sources>
+				<include name="Test\PtrTest.cs" />
+			</sources>
+		</csc>
 	</target>
 </project>
