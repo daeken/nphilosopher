@@ -8,6 +8,8 @@ namespace NPhilosopher {
 		| LT
 		| GTE
 		| LTE
+		| True
+		| False
 	}
 	
 	public variant NIT {
@@ -68,6 +70,11 @@ namespace NPhilosopher {
 		
 		| Convert {
 			TValue : object;
+		}
+		
+		| Compare {
+			CComparison : NComparison;
+			Ordered : bool;
 		}
 	}
 	
@@ -141,6 +148,9 @@ namespace NPhilosopher {
 					| 0x00E0U => NIT.Convert(0 :> uint)
 					
 					| 0x002BU => NIT.CondBranch(CA(arg) :> long, 0, null, false)
+					| 0x002DU => NIT.CondBranch(CA(arg) :> long, 0, NComparison.True(), false)
+					
+					| 0xFE04U => NIT.Compare(NComparison.LT(), true)
 					
 					| _ => throw Exception(String.Format("Unknown opcode {0:X}", opcd));
 				}

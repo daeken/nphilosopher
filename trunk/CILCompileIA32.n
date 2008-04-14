@@ -112,17 +112,49 @@ namespace NPhilosopher {
 							throw Exception(String.Format("StoreIndirect {0}", x))
 					}
 				
-				| CondBranch(taken, _, comp, _) =>
+				| CondBranch(taken, nottaken, comp, _) =>
+					def next = match(nilInst) {
+						| Inst(pos, size, _, _, _, _) =>
+							pos + size
+					};
+					
 					if(comp == null) {
 						String.Format(
 							"\t\tjmp .block_{0:X}\n",
-							match(nilInst) {
-								| Inst(pos, size, _, _, _, _) =>
-									pos + size
-							} + taken
+							next + taken
 						)
 					} else
-						throw Exception("Conditional branches not supported")
+						match(comp) {
+							| True | False =>
+								"\t\tpop eax\n" + 
+								"\t\ttest eax, eax\n" + 
+								String.Format(
+									"\t\t{0} .block_{1:X}\n",
+									match(comp) {
+										| True => "bnz"
+										| False => "bz"
+									},
+									next + taken
+								) + 
+								String.Format(
+									"\t\tjmp .block_{0:X}\n",
+									next + nottaken
+								)
+							| _ =>
+								throw Exception("Comparing branches not supported")
+						}
+				
+				| Compare(comp, _) =>
+					def asm = "\t\tpop ebx\n" + 
+					"\t\tpop eax\n" + 
+					"\t\tcmp eax, ebx\n" + 
+					"\t\txor eax, eax\n" + 
+					match(comp) {
+						| LT =>
+							"\t\tsetl al\n"
+					};
+					asm + 
+					"\t\tpush eax\n"
 				
 				| Ret() =>
 					"\t\tjmp .end\n"
