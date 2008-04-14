@@ -52,7 +52,7 @@ namespace NPhilosopher {
 		CompileBlock(blocks : Hashtable [long, NIL.Block], start : long) : string {
 			match(blocks[start]) {
 				| Block(pos, insts) =>
-					mutable asm = String.Format("\t.block_{0}:\n", pos);
+					mutable asm = String.Format("\t.block_{0:X}:\n", pos);
 					foreach(inst :> NIL.Inst in insts)
 						asm += CompileInst(inst, CILToNIT.ConvertInst(inst));
 					asm;
@@ -115,10 +115,10 @@ namespace NPhilosopher {
 				| CondBranch(taken, _, comp, _) =>
 					if(comp == null) {
 						String.Format(
-							"\t\tjmp .block_{0}\n",
+							"\t\tjmp .block_{0:X}\n",
 							match(nilInst) {
-								| Inst(pos, _, _, _, _, _) =>
-									pos
+								| Inst(pos, size, _, _, _, _) =>
+									pos + size
 							} + taken
 						)
 					} else
