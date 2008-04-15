@@ -12,7 +12,12 @@ namespace NPhilosopher {
 		
 		| Type {
 			TypeName : string;
+			Fields : list [NAssembly];
 			Members : list [NAssembly];
+		}
+		
+		| Field {
+			FieldName : string;
 		}
 		
 		| Method {
@@ -33,13 +38,13 @@ namespace NPhilosopher {
 	
 	public variant NIL {
 		| Block {
-			Pos : int;
+			Pos : long;
 			Insts : ArrayList;
 		}
 		
 		| Inst {
-			Pos : int;
-			Size : int;
+			Pos : long;
+			Size : long;
 			Prefix : NIL;
 			Opcode : uint;
 			Mnem : string;
@@ -302,12 +307,31 @@ namespace NPhilosopher {
 			def assembly = Assembly.ReflectionOnlyLoadFrom(file);
 			
 			foreach(t in assembly.GetTypes())
-				types = NAssembly.Type(t.FullName, ReflectMembers(t)) :: types;
+				types = NAssembly.Type(
+					t.FullName, 
+					ReflectFields(t),
+					ReflectMembers(t)
+				) :: types;
 			
 			NAssembly.Assembly(assembly.FullName, types);
 		}
 		
-		public ReflectMembers(t : Type) : list[NAssembly] {
+		public ReflectFields(t : Type) : list [NAssembly] {
+			mutable fields : list [NAssembly] = [];
+			def flags = (
+				BindingFlags.Static |
+				BindingFlags.Public |
+				BindingFlags.NonPublic | 
+				BindingFlags.DeclaredOnly
+			);
+			
+			foreach(field in t.GetFields(flags))
+				fields = NAssembly.Field(field.Name) :: fields;
+			
+			fields;
+		}
+		
+		public ReflectMembers(t : Type) : list [NAssembly] {
 			mutable members : list [NAssembly] = [];
 			def flags = (
 				BindingFlags.Instance |
@@ -354,23 +378,23 @@ namespace NPhilosopher {
 			def insts = Hashtable();
 			def blocks = Hashtable.[long, NIL.Block]();
 			def il = body.GetILAsByteArray();
-			mutable blockList : list [int] = [];
-			mutable next : int;
-			mutable start : int;
+			mutable blockList : list [long] = [];
+			mutable next : long;
+			mutable start : long;
 			
 			def ParseArgument(arg) : NIL {
 				| NIL.IntArg(size) =>
 					def temp = NIL.Int(
 						match(size) {
 							| 8 => 
-								def temp = il[next] :> long;
+								def temp = il[next :> int] :> long;
 								if((temp & 0x80) == 0x80)
 									temp - 256
 								else
 									temp
-							| 16 => BitConverter.ToInt16(il, next) :> long
-							| 32 => BitConverter.ToInt32(il, next) :> long
-							| 64 => BitConverter.ToInt64(il, next)
+							| 16 => BitConverter.ToInt16(il, next :> int) :> long
+							| 32 => BitConverter.ToInt32(il, next :> int) :> long
+							| 64 => BitConverter.ToInt64(il, next :> int)
 							| _ => 0L
 						}
 					);
@@ -380,10 +404,10 @@ namespace NPhilosopher {
 				| NIL.UIntArg(size) =>
 					def temp = NIL.UInt(
 						match(size) {
-							| 8 => il[next] :> ulong
-							| 16 => BitConverter.ToUInt16(il, next) :> ulong
-							| 32 => BitConverter.ToUInt32(il, next) :> ulong
-							| 64 => BitConverter.ToUInt64(il, next)
+							| 8 => il[next :> int] :> ulong
+							| 16 => BitConverter.ToUInt16(il, next :> int) :> ulong
+							| 32 => BitConverter.ToUInt32(il, next :> int) :> ulong
+							| 64 => BitConverter.ToUInt64(il, next :> int)
 							| _ => 0UL
 						}
 					);
@@ -392,17 +416,18 @@ namespace NPhilosopher {
 				
 				| NIL.FloatArg =>
 					next += 4;
-					NIL.Float(BitConverter.ToSingle(il, next-4));
+					NIL.Float(BitConverter.ToSingle(il, next :> int - 4));
 				
 				| NIL.DoubleArg =>
 					next += 8;
-					NIL.Double(BitConverter.ToDouble(il, next-8));
+					NIL.Double(BitConverter.ToDouble(il, next :> int - 8));
 				
 				| NIL.TokenArg =>
-					def token = BitConverter.ToInt32(il, next);
+					def token = BitConverter.ToInt32(il, next :> int);
 					next += 4;
 					
 					match(token >> 24) {
+						| 0x04 => NIL.Object(mod.ResolveField(token).Name);
 						| 0x06 => NIL.Object(mod.ResolveMethod(token));
 						| 0x0A => NIL.Object(mod.ResolveMember(token));
 						| 0x70 => NIL.Object(mod.ResolveString(token));
@@ -439,15 +464,15 @@ namespace NPhilosopher {
 			
 			def Parse() {
 				def prefix = ParseOpcd(
-					match(il[next] :> uint) {
-						| 0xFEU => (0xFE00U | (il[next+1] :> uint));
+					match(il[next :> int] :> uint) {
+						| 0xFEU => (0xFE00U | (il[next :> int +1] :> uint));
 						| x => x;
 					}, 
 					null, 
 					Prefixes
 				);
-				def opcd = match(il[next] :> uint) {
-					| 0xFEU => (0xFE00U | (il[next+1] :> uint));
+				def opcd = match(il[next :> int] :> uint) {
+					| 0xFEU => (0xFE00U | (il[next :> int + 1] :> uint));
 					| x => x;
 				};
 				def inst = ParseOpcd(
@@ -477,19 +502,25 @@ namespace NPhilosopher {
 								| 0x002CU | 0x002DU | 0x002EU | 0x002FU
 								| 0x0030U | 0x0031U | 0x0032U | 0x0033U
 								| 0x0034U | 0x0035U | 0x0036U | 0x0037U
-								| 0x0039U | 0x003AU | 0x003CU | 0x003DU
-								| 0x003EU | 0x003FU
+								| 0x0039U | 0x003AU | 0x003BU | 0x003CU
+								| 0x003DU | 0x003EU | 0x003FU
 								// Unconditional branches
-								| 0x002BU | 0x003BU =>
+								| 0x002BU | 0x0038U =>
 									def target = match(arg) {
 										| Int(val) =>
 											next + val :> int;
 										| x => throw Exception(String.Format("Unknown branch arg {0}", x));
 									};
+									match(opcd) {
+										| 0x002BU | 0x0038U => ()
+										| _ =>
+											unless(target == next) {
+												blockList = next :: blockList;
+												ProcessInst(next);
+											}
+									}
 									blockList = target :: blockList;
 									ProcessInst(target);
-									unless(target == next)
-										ProcessInst(next);
 								
 								| _ =>
 									ProcessInst(next);
@@ -499,60 +530,69 @@ namespace NPhilosopher {
 			}
 			
 			def BuildBlocks(remaining) {
-				| [] => blocks;
-				| pos :: rest =>
-					def blockInsts = ArrayList();
-					next = pos;
-					
-					mutable break : bool = false;
-					while(!break && insts.ContainsKey(next)) {
-						def inst = insts[next] :> NIL.Inst;
-						_ = blockInsts.Add(inst);
-						
-						match(inst) {
-							| Inst(_, size, _, _, _, _) =>
-								next += size;
-								when(blocks.ContainsKey(next))
-									break = true;
-						}
+				def InRest(next, rest) {
+					match(rest) {
+						| [] => false
+						| pos :: rest =>
+							if(pos == next)
+								true
+							else
+								InRest(next, rest)
 					}
-					
-					_ = blocks.Add(pos, NIL.Block(pos, blockInsts));
-					
-					BuildBlocks(rest);
+				}
+				
+				match(remaining) {
+					| [] => blocks;
+					| pos :: rest when !blocks.ContainsKey(pos) =>
+						def blockInsts = ArrayList();
+						next = pos;
+						
+						mutable break : bool = false;
+						
+						while(!break && insts.ContainsKey(next)) {
+							def inst = insts[next] :> NIL.Inst;
+							_ = blockInsts.Add(inst);
+							
+							match(inst) {
+								| Inst(_, size, _, opcd, _, _) =>
+									next += size;
+									
+									match(opcd) {
+										| 0x002BU | 0x0038U =>
+											break = true
+										| _ => ()
+									}
+									
+									when(
+										!break && 
+										(blocks.ContainsKey(next) || InRest(next, rest))
+									) {
+										_ = blockInsts.Add(
+											NIL.Inst(
+												next,
+												0,
+												null,
+												0x002BU,
+												"br",
+												NIL.Int(0)
+											)
+										);
+										break = true;
+									}
+							}
+						}
+						
+						_ = blocks.Add(pos, NIL.Block(pos, blockInsts));
+						
+						BuildBlocks(rest);
+					| _ :: rest =>
+						BuildBlocks(rest)
+				}
 			}
 			
-			blockList = 0 :: blockList;
+			blockList = 0L :: blockList;
 			ProcessInst(0);
 			BuildBlocks(blockList);
-		}
-		
-		private Dump(obj : NAssembly) : void {
-			| NAssembly.Assembly(name, types) =>
-				Console.WriteLine("Assembly: {0}", name);
-				DumpList(types);
-			
-			| NAssembly.Type(name, members) =>
-				Console.WriteLine("\tType: {0}", name);
-				DumpList(members);
-			
-			| NAssembly.Method(name, locals, args, returnType, _) =>
-				Console.WriteLine("\t\tMethod: {0}", name);
-				Console.WriteLine("\t\t\tLocals: {0}", locals);
-				DumpList(args);
-				Console.WriteLine("\t\t\tReturns: {0}", returnType);
-			
-			| NAssembly.Argument(name, argType) =>
-				Console.WriteLine("\t\t\tArgument: {0} : {1}", name, argType);
-			
-			| _ => ();
-		}
-		
-		private DumpList(obj : list [NAssembly]) : void {
-			| [] => ();
-			| head :: tail =>
-				Dump(head);
-				DumpList(tail);
 		}
 	}
 }

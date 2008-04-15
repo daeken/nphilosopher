@@ -10,15 +10,18 @@ namespace NPhilosopher {
 		
 		public CompileAssembly(assembly : NAssembly) : string {
 			| Assembly(_, types) =>
-				"[BITS 16]\n" + 
-				"[ORG 0x60000]\n" + 
 				"\tcall method_Main\n" + 
 				CompileList(types)
 			
-			| Type(_, members) =>
+			| Type(_, fields, members) =>
+				CompileList(fields) + 
 				CompileList(members)
 			
-			| Method(name, locals, _, _, blocks) when blocks != null =>
+			| Field(name) =>
+				String.Format("\tfield_{0} dd 0\n", name)
+			
+			| Method(name, locals, args, ret, blocks) when blocks != null =>
+				def args = args.Length :> long;
 				mutable asm = String.Format("method_{0}:\n", name) + 
 				"\t.begin:\n" + 
 				"\t\tpush ebp\n" + 
@@ -27,17 +30,25 @@ namespace NPhilosopher {
 					if(locals == 0)
 						""
 					else
-						String.Format("\t\tadd esp, {0}\n", locals * 4)
+						String.Format("\t\tsub esp, {0}\n", locals * 4)
 				};
 				asm += "\t\tjmp .block_0\n"; 
 				foreach((key, _) in blocks.KeyValuePairs)
-					asm += CompileBlock(blocks, key);
+					asm += CompileBlock(blocks, key, args);
 				asm + 
 				"\t.end:\n" + 
-				"\t\tpop eax\n" + 
+				({
+					if(ret.IsAssignableFrom(typeof(void)))
+						""
+					else
+						"\t\tpop eax\n"
+				}) + 
 				"\t\tmov esp, ebp\n" + 
 				"\t\tpop ebp\n" + 
-				"\t\tret\n"
+				String.Format(
+					"\t\tret {0}\n",
+					args * 4
+				)
 			
 			| _ => "";
 		}
@@ -49,12 +60,12 @@ namespace NPhilosopher {
 				CompileList(tail)
 		}
 		
-		CompileBlock(blocks : Hashtable [long, NIL.Block], start : long) : string {
+		CompileBlock(blocks : Hashtable [long, NIL.Block], start : long, args : long) : string {
 			match(blocks[start]) {
 				| Block(pos, insts) =>
 					mutable asm = String.Format("\t.block_{0:X}:\n", pos);
 					foreach(inst :> NIL.Inst in insts)
-						asm += CompileInst(inst, CILToNIT.ConvertInst(inst));
+						asm += CompileInst(inst, CILToNIT.ConvertInst(inst), args);
 					asm;
 			}
 		}
@@ -66,21 +77,30 @@ namespace NPhilosopher {
 			"\t\tpush eax\n";
 		}
 		
-		CompileInst(nilInst : NIL.Inst, inst : NIT) : string {
+		CompileInst(nilInst : NIL.Inst, inst : NIT, args : long) : string {
 			match(inst) {
 				| null => ""
 				
 				| Checked(_, inst) =>
-					CompileInst(nilInst, inst);
+					CompileInst(nilInst, inst, args);
 				
 				| Add => CompileMath("add")
 				| Sub => CompileMath("sub")
 				| Mul => CompileMath("imul")
 				| Div => CompileMath("idiv")
 				
+				| And => CompileMath("and")
+				| Or  => CompileMath("or")
+				| Xor => CompileMath("xor")
+				
 				| Call(target is MethodInfo) =>
 					String.Format("\t\tcall method_{0}\n", target.Name) + 
-					"\t\tpush eax\n"
+					{
+						if(target.ReturnType.IsAssignableFrom(typeof(void)))
+							""
+						else
+							"\t\tpush eax\n"
+					}
 				
 				| Push(value) =>
 					match(value) {
@@ -90,29 +110,57 @@ namespace NPhilosopher {
 							throw Exception(String.Format("Push unknown {0} {1}", x.GetType(), x))
 					}
 				
-				| LoadArg(arg) =>
-					String.Format("\t\tmov eax, [ebp-{0}]\n", arg * 4 + 4) + 
+				| Dup =>
+					"\t\tpop eax\n" + 
+					"\t\tpush eax\n" + 
 					"\t\tpush eax\n"
 				
+				| LoadArg(arg) =>
+					String.Format("\t\tmov eax, [ebp+{0}]\n", (args - arg) * 4 + 4) + 
+					"\t\tpush eax\n"
+				
+				| StoreArg(arg) =>
+					"\t\tpop eax\n" + 
+					String.Format("\t\tmov [ebp+{0}], eax\n", (args - arg) * 4 + 4)
+				
 				| LoadLocal(local) =>
-					String.Format("\t\tmov eax, [ebp+{0}]\n", local * 4) + 
+					String.Format("\t\tmov eax, [ebp-{0}]\n", local * 4 + 4) + 
 					"\t\tpush eax\n"
 				
 				| StoreLocal(local) =>
 					"\t\tpop eax\n" + 
-					String.Format("\t\tmov [ebp+{0}], eax\n", local * 4)
+					String.Format("\t\tmov [ebp-{0}], eax\n", local * 4 + 4)
+				
+				| LoadField(field, _) =>
+					String.Format("\t\tmov eax, [field_{0}]\n", field) + 
+					"\t\tpush eax\n"
+				
+				| StoreField(field, _) =>
+					"\t\tpop eax\n" + 
+					String.Format("\t\tmov [field_{0}], eax\n", field)
+				
+				| LoadIndirect(t) =>
+					"\t\tpop eax\n" + 
+					"\t\txor ebx, ebx\n" + 
+					(match(t) {
+						| _ is byte =>
+							"\t\tmov bl, [eax]\n"
+						| x =>
+							throw Exception(String.Format("LoadIndirect {0}", x.GetType()))
+					}) + 
+					"\t\tpush ebx\n"
 				
 				| StoreIndirect(t) =>
-					"\t\tpop ebx\n" + 
 					"\t\tpop eax\n" + 
+					"\t\tpop ebx\n" + 
 					match(t) {
 						| _ is byte =>
-							"\t\tmov byte ptr [ebx], eax\n"
+							"\t\tmov [ebx], al\n"
 						| x =>
-							throw Exception(String.Format("StoreIndirect {0}", x))
+							throw Exception(String.Format("StoreIndirect {0}", x.GetType()))
 					}
 				
-				| CondBranch(taken, nottaken, comp, _) =>
+				| CondBranch(taken, _, comp, _) =>
 					def next = match(nilInst) {
 						| Inst(pos, size, _, _, _, _) =>
 							pos + size
@@ -131,14 +179,11 @@ namespace NPhilosopher {
 								String.Format(
 									"\t\t{0} .block_{1:X}\n",
 									match(comp) {
-										| True => "bnz"
-										| False => "bz"
+										| True => "jnz"
+										| False => "jz"
+										| _ => throw Exception("Should never hit this...")
 									},
 									next + taken
-								) + 
-								String.Format(
-									"\t\tjmp .block_{0:X}\n",
-									next + nottaken
 								)
 							| _ =>
 								throw Exception("Comparing branches not supported")
@@ -147,14 +192,17 @@ namespace NPhilosopher {
 				| Compare(comp, _) =>
 					def asm = "\t\tpop ebx\n" + 
 					"\t\tpop eax\n" + 
+					"\t\txor ecx, ecx\n" + 
 					"\t\tcmp eax, ebx\n" + 
-					"\t\txor eax, eax\n" + 
 					match(comp) {
+						| EQ =>
+							"\t\tsete cl\n"
 						| LT =>
-							"\t\tsetl al\n"
+							"\t\tsetl cl\n"
+						| _ => throw Exception("Unknown comparison")
 					};
 					asm + 
-					"\t\tpush eax\n"
+					"\t\tpush ecx\n"
 				
 				| Ret() =>
 					"\t\tjmp .end\n"
