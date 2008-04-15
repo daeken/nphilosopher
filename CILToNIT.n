@@ -62,10 +62,24 @@ namespace NPhilosopher {
 			LocalSrc : long;
 		}
 		| LoadArg {
-			Arg : int;
+			ArgSrc : long;
+		}
+		| StoreArg {
+			ArgDest : long;
+		}
+		| LoadField {
+			FieldSrc : string;
+			StaticSrc : bool;
+		}
+		| StoreField {
+			FieldDest : string;
+			StaticDest : bool;
+		}
+		| LoadIndirect {
+			LoadType : object;
 		}
 		| StoreIndirect {
-			Type : object;
+			StoreType : object;
 		}
 		
 		| Convert {
@@ -89,16 +103,27 @@ namespace NPhilosopher {
 					| 0x0004U => NIT.LoadArg(2)
 					| 0x0005U => NIT.LoadArg(3)
 					
+					| 0x0010U => NIT.StoreArg(CA(arg) :> long)
+					
 					| 0x0006U => NIT.LoadLocal(0)
 					| 0x0007U => NIT.LoadLocal(1)
 					| 0x0008U => NIT.LoadLocal(2)
 					| 0x0009U => NIT.LoadLocal(3)
+					| 0x0011U => NIT.LoadLocal(CA(arg) :> long)
 					
 					| 0x000AU => NIT.StoreLocal(0)
 					| 0x000BU => NIT.StoreLocal(1)
 					| 0x000CU => NIT.StoreLocal(2)
 					| 0x000DU => NIT.StoreLocal(3)
+					| 0x0013U => NIT.StoreLocal(CA(arg) :> long)
 					
+					| 0x007EU => NIT.LoadField(CA(arg) :> string, true)
+					| 0x0080U => NIT.StoreField(CA(arg) :> string, true)
+					
+					| 0x0046U | 0x0047U => NIT.LoadIndirect(0 :> byte)
+					| 0x0048U | 0x0049U => NIT.LoadIndirect(0 :> short)
+					| 0x004AU | 0x004BU | 0x004DU => 
+						NIT.LoadIndirect(0 : int)
 					| 0x0052U => NIT.StoreIndirect(0 :> byte)
 					
 					| 0x0028U => NIT.Call(CA(arg))
@@ -144,12 +169,15 @@ namespace NPhilosopher {
 					
 					| 0x0072U => NIT.Push(CA(arg))
 					
+					| 0x0025U => NIT.Dup()
+					
 					| 0x00D3U => NIT.Convert(0 : int)
-					| 0x00E0U => NIT.Convert(0 :> uint)
+					| 0x00D1U | 0x00D2U | 0x00E0U => NIT.Convert(0 :> uint)
 					
-					| 0x002BU => NIT.CondBranch(CA(arg) :> long, 0, null, false)
-					| 0x002DU => NIT.CondBranch(CA(arg) :> long, 0, NComparison.True(), false)
+					| 0x002BU | 0x0038U => NIT.CondBranch(CA(arg) :> long, 0, null, false)
+					| 0x002DU | 0x003AU => NIT.CondBranch(CA(arg) :> long, 0, NComparison.True(), false)
 					
+					| 0xFE01U => NIT.Compare(NComparison.EQ(), true)
 					| 0xFE04U => NIT.Compare(NComparison.LT(), true)
 					
 					| _ => throw Exception(String.Format("Unknown opcode {0:X}", opcd));
