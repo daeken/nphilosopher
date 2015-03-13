@@ -1,0 +1,1 @@
+The NPhilosopher project aims to produce an extensible compiler written in Nemerle with a number of supported languages and targets.
